@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./interfaces/INFTMarket_V4.sol";
+import "./interfaces/INFTMarket_V5.sol";
 
 interface ITokenBank {
     function tokensReceived(address, address, uint256) external returns (bool);
@@ -86,7 +86,7 @@ contract GTST is ERC20, ERC20Permit, ReentrancyGuard {
         returns (bool)
     {
         if (_isContract(_to)) {
-            INFTMarket_V4(_to).tokensReceived(msg.sender, address(this), _bidAmount, _data);
+            INFTMarket_V5(_to).tokensReceived(msg.sender, address(this), _bidAmount, _data);
         } else {
             revert NotContract();
         }
