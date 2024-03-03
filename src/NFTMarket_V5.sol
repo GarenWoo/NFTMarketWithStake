@@ -13,6 +13,7 @@ import "./interfaces/INFTMarket_V5.sol";
 import "./interfaces/INFTPermit.sol";
 import "./interfaces/IUniswapV2Router02.sol";
 import "./interfaces/IWETH9.sol";
+import "./KKToken.sol";
 
 /**
  * @title This is an NFT exchange contract that can provide trading for ERC721 Tokens. Various ERC721 tokens are able to be traded here.
@@ -199,7 +200,7 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
      * @param _tokenAmount the amount of paid "GTST"
      */
     function buyWithGTST(address _nftAddr, uint256 _tokenId, uint256 _tokenAmount) external {
-        bool checkResult = _beforeNFTPurchase(msg.sender, _ERC20TokenAddr, _nftAddr, _tokenId);
+        bool checkResult = _beforeNFTPurchase(msg.sender, GTSTAddr, _nftAddr, _tokenId);
 
         // To avoid users directly buying NFTs which require checking of whitelist membership, here check the interface existence of {_support_IERC721Permit}.
         bool isERC721PermitSupported = _support_IERC721Permit(_nftAddr);
@@ -498,14 +499,14 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
             revert stakeZero();
         }
         uint256 shares;
-        uint256 totalSupply = IERC20(KKToken_CompoundStake).totalSupply();
+        uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
         if (totalSupply == 0) {
             shares = _stakedAmount;
         } else {
             shares = (_stakedAmount * totalSupply) / stakePool_CompoundStake;
         }
         IWETH9(wrappedETHAddr).transferFrom(msg.sender, address(this), _stakedAmount);
-        IERC20(KKToken_CompoundStake).mint(msg.sender, shares);
+        KKToken(KKToken_CompoundStake).mint(msg.sender, shares);
         stakePool_CompoundStake += _stakedAmount;
         emit WETHStaked_CompoundStake(msg.sender, _stakedAmount, shares);
     }
@@ -525,9 +526,9 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
         if (_sharesAmount == 0) {
             revert invalidUnstakedAmount();
         }
-        uint256 totalSupply = IERC20(KKToken_CompoundStake).totalSupply();
+        uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
         uint amount = (_sharesAmount * stakePool_CompoundStake) / totalSupply;
-        IERC20(KKToken_CompoundStake).burn(msg.sender, _sharesAmount);
+        KKToken(KKToken_CompoundStake).burn(msg.sender, _sharesAmount);
         stakePool_CompoundStake -= amount;
         userBalanceOfWETH[msg.sender] += amount;
         emit WETHUnstaked_CompoundStake(msg.sender, _sharesAmount, amount);
@@ -653,7 +654,7 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
      * @notice Get the total supply of KKToken_CompoundStake(the shares of the staked ETH).
      */
     function getTotalSupplyOfShares_CompoundStake() public view returns (uint256) {
-        return IERC20(KKToken_CompoundStake).totalSupply();
+        return KKToken(KKToken_CompoundStake).totalSupply();
     }
 
 
@@ -683,13 +684,13 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
      */
     function _stakeWETH_CompoundStake(address _account, uint256 _stakedAmount) internal {
         uint256 shares;
-        uint256 totalSupply = IERC20(KKToken_CompoundStake).totalSupply();
+        uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
         if (totalSupply == 0) {
             shares = _stakedAmount;
         } else {
             shares = (_stakedAmount * totalSupply) / stakePool_CompoundStake;
         }
-        IERC20(KKToken_CompoundStake).mint(_account, shares);
+        KKToken(KKToken_CompoundStake).mint(_account, shares);
         stakePool_CompoundStake += _stakedAmount;
     }
 

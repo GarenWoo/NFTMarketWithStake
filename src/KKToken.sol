@@ -11,7 +11,7 @@ contract KKToken is ERC20 {
     event TokenMinted(address recipient, uint256 amount, uint256 timestamp);
     event TokenBurnt(address sender, uint256 amount, uint256 timestamp);
 
-    constructor() ERC20("KK Token", "KKT") ERC20Permit("KK Token") {
+    constructor() ERC20("KK Token", "KKT") {
         owner = msg.sender;
     }
 

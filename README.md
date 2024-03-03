@@ -320,7 +320,7 @@ function stakeWETH_CompoundStake(uint256 _stakedAmount) public {
             revert stakeZero();
         }
         uint256 shares;
-        uint256 totalSupply = IERC20(KKToken_CompoundStake).totalSupply();
+        uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
         if (totalSupply == 0) {
             shares = _stakedAmount;
         } else {
@@ -328,7 +328,7 @@ function stakeWETH_CompoundStake(uint256 _stakedAmount) public {
             shares = (_stakedAmount * totalSupply) / stakePool_CompoundStake;
         }
         IWETH9(wrappedETHAddr).transferFrom(msg.sender, address(this), _stakedAmount);
-        IERC20(KKToken_CompoundStake).mint(msg.sender, shares);
+        KKToken(KKToken_CompoundStake).mint(msg.sender, shares);
         stakePool_CompoundStake += _stakedAmount;
         emit WETHStaked_CompoundStake(msg.sender, _stakedAmount, shares);
     }
@@ -343,11 +343,11 @@ function unstakeWETH_CompoundStake(uint256 _sharesAmount) public {
         if (_sharesAmount == 0) {
             revert invalidUnstakedAmount();
         }
-        uint256 totalSupply = IERC20(KKToken_CompoundStake).totalSupply();
+        uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
         // 计算应当提取的 WETH 的数量
         uint amount = (_sharesAmount * stakePool_CompoundStake) / totalSupply;
         // 将股份（KKToken）销毁
-        IERC20(KKToken_CompoundStake).burn(msg.sender, _sharesAmount);
+        KKToken(KKToken_CompoundStake).burn(msg.sender, _sharesAmount);
         stakePool_CompoundStake -= amount;
         // 增加用户的 WETH 余额
         userBalanceOfWETH[msg.sender] += amount;

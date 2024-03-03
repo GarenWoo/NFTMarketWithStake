@@ -359,7 +359,7 @@ interface INFTMarket_V5 {
      * @param _r ECDSA signature r
      * @param _s ECDSA signature s 
      */
-    function permitPrePaypermitPrePay(address _ERC20TokenAddr, address _tokenOwner, uint256 _tokenAmount, uint256 _deadline, uint8 _v, bytes32 _r, bytes32 _s) external returns (bool);
+    function permitPrePay(address _ERC20TokenAddr, address _tokenOwner, uint256 _tokenAmount, uint256 _deadline, uint8 _v, bytes32 _r, bytes32 _s) external returns (bool);
 
     /**
      * @notice A member in a whitelist(built by an NFT project) claims its NFT with a specified price. 
@@ -393,7 +393,7 @@ interface INFTMarket_V5 {
      *
      * @param _calls the dynamic array containing multiple unique calls in the type of struct `Call`
      */
-    function aggregate(Call[] memory _calls) public returns(bytes[] memory returnData);
+    function aggregate(Call[] memory _calls) external returns(bytes[] memory returnData);
 
 
     // ------------------------------------------------------ ** Stake WETH(Simple Interest) ** ------------------------------------------------------
