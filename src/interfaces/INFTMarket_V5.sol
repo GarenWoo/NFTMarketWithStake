@@ -21,9 +21,9 @@ interface INFTMarket_V5 {
      * @dev A custom struct to contains the fields related to stakers of simple-stake(simple interest model).
      */
     struct stakerOfSimpleStake {
-        uint256 principal;              // the total amount of staked WETH
-        uint256 accrualInterest;        // the latestly updated interest(gloabally maintained interest of each stake) of the staker
-        uint256 earned;                 // the total amount of earned value
+        uint256 principal;                      // the total amount of staked WETH
+        uint256 accrualInterestAdjusted;        // the latestly updated interest(gloabally maintained interest of each stake) of the staker multiplied by MANTISSA
+        uint256 earned;                         // the total amount of earned value
     }
 
 
@@ -77,12 +77,12 @@ interface INFTMarket_V5 {
     /**
      * @dev Emitted when a user stake(simple interest) WETH in the NFTMarket contract.
      */
-    event WETHStaked_SimpleStake(address user, uint256 stakedAmount, uint256 currentInterest);
+    event WETHStaked_SimpleStake(address user, uint256 stakedAmount, uint256 stakeInterestAdjusted);
     
     /**
      * @dev Emitted when a user unstake(simple interest) WETH from the NFTMarket contract.
      */
-    event WETHUnstaked_SimpleStake(address user, uint256 unstakedAmount, uint256 currentInterest);
+    event WETHUnstaked_SimpleStake(address user, uint256 unstakedAmount, uint256 stakeInterestAdjusted);
 
     /**
      * @dev Emitted when a user stake(compound interest) WETH in the NFTMarket contract.

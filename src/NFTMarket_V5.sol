@@ -37,13 +37,14 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
     mapping(address user => uint256 WETHBalance) private userBalanceOfWETH;     // the WETH balance of a specific user
     mapping(address user => uint256 GTSTBalance) private userBalanceOfGTST;     // the GTST balance of a specific user
     
+    uint256 public constant MANTISSA = 1e18;            // a constant factor used to be multiplied by a tiny number which may be divided by a large number to avoid the loss of calculation accuracy 
     uint8 public constant FIGURE_FEERATIO = 10;         // the pure figure of the proportion of the profits of selling NFTs
-    uint8 public constant FRACTION_FEERATIO = 2;        // the dicimal of the proportion of the profits of selling NFTs
-    
+    uint8 public constant FRACTION_FEERATIO = 2;        // the fraction of the proportion of the profits of selling NFTs
+
     // State variables of simple stake(simple interest)
     // `staker`: A struct that contains the fields related to stakers of simple-stake(simple interest model).
     mapping(address account => stakerOfSimpleStake stakerStruct) public staker;
-    uint256 public stakeInterest;                       // the interest of staking WETH(simple interest) of each stake
+    uint256 public stakeInterestAdjusted;               // the number of the interest(simple stake) per stake multiplied by MANTISSA
     uint256 public stakePool_SimpleStake;               // the total amount of staked WETH
 
     // State variables of compound stake(compound interest)
@@ -429,7 +430,7 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
      * @dev The total staked(simple stake) amount of WETH will be recorded by the state variable `stakePool_SimpleStake`.
      * This function can stake WETH in this NFTMarket contract to earn simple interest.
      * The simple interest comes from part of the profits of selling NFT(s) which is automatically added to `stakePool_SimpleStake`(non-zero value of `stakePool_SimpleStake` required).
-     * In this type of stake, `stakeInterest` which represents the interest of each staked WETH is maintained globally when `stakePool_SimpleStake` changes(non-zero value of `stakePool_SimpleStake` required).
+     * In this type of stake, `stakeInterestAdjusted` which represents the interest(multiplied by `MANTISSA`) of each staked WETH is maintained globally when `stakePool_SimpleStake` changes(non-zero value of `stakePool_SimpleStake` required).
      * Emits the event {WETHStaked_SimpleStake}.
      *
      * @param _stakedAmount the staked amount of WETH
@@ -440,15 +441,15 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
         }
         // Update the earned interest before updating the principal.
         // When a user stakes WETH for the first time, the principal before this stake will be zero. The earned interest of this staker is zero as well.
-        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterest - staker[msg.sender].accrualInterest);
+        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
         // Transfer WETH from `msg.sender` to `address(this)`
         IWETH9(wrappedETHAddr).transferFrom(msg.sender, address(this), _stakedAmount);
         // Update the fields of the staker:
         staker[msg.sender].principal += _stakedAmount;
-        staker[msg.sender].accrualInterest = stakeInterest;
+        staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
         // Add the new staked amount of WETH into `stakePool_SimpleStake`(i.e. the total amount of the staked WETH)
         stakePool_SimpleStake += _stakedAmount;
-        emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterest);
+        emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterestAdjusted);
     }
 
     /**
@@ -464,7 +465,7 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
             revert invalidUnstakedAmount();
         }
         // Update the earned interest before updating the principal.
-        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterest - staker[msg.sender].accrualInterest);
+        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
         // Calculate the earned interest corresponding to the unstaked amount of WETH based on the proportion of `_unstakeAmount` in `staker[msg.sender].principal`(before minus by `_unstakeAmount`).
         uint256 correspondingInterest = _unstakeAmount * staker[msg.sender].earned / staker[msg.sender].principal;
         // Calculate the total amount of withdrawn WETH(including principal and earned interest)
@@ -473,10 +474,10 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
         // Update the Amount of the earned interest of `msg.sender` after withdrawing the corresponding interest to `_unstakeAmount`.
         staker[msg.sender].earned -= correspondingInterest;
         staker[msg.sender].principal -= _unstakeAmount;
-        staker[msg.sender].accrualInterest = stakeInterest;
+        staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
         // Withdraw the unstaked amount of WETH from `stakePool_SimpleStake`(i.e. the total amount of the staked WETH)
         stakePool_SimpleStake -= _unstakeAmount;
-        emit WETHUnstaked_SimpleStake(msg.sender, _unstakeAmount, stakeInterest);
+        emit WETHUnstaked_SimpleStake(msg.sender, _unstakeAmount, stakeInterestAdjusted);
     }
     
 
@@ -644,7 +645,7 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
     /**
      * @notice Get the information about the staker which has staked(simple stake) WETH.
      *
-     * @dev Get the struct which contains multiple fields including `principal`, `accrualInterest` and `earned` of `msg.sender`.
+     * @dev Get the struct which contains multiple fields including `principal`, `accrualInterestAdjusted` and `earned` of `msg.sender`.
      */
     function getStakerInfo_SimpleStake() public view returns(stakerOfSimpleStake memory) {
         return staker[msg.sender];
@@ -909,7 +910,7 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
 
     function _updateInterest_SimpleStake(uint256 _value) internal {
         if (stakePool_SimpleStake != 0) {
-            stakeInterest += _value / stakePool_SimpleStake;
+            stakeInterestAdjusted += _value * MANTISSA / stakePool_SimpleStake;
         }
     }
 }

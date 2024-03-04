@@ -176,7 +176,23 @@ function _handleNFTPurchaseWithSlippage(address _nftBuyer, address _ERC20TokenAd
 
 ### 2-1. 单利质押的实现
 
-#### a. 声明状态变量记录单利质押的关键数据：
+#### a. 当发生 NFT 交易时产生交易费并将其部分作为收益
+
+**单利质押的收益**来自于NFT 交易时产生**交易费**，由**单份质押收益率**所体现，即前文提到的 {handleNFTPurchase} 和 {handleNFTPurchaseWithSlippage} 将调用 内部方法 {updateInterest_SimpleStake} ，以此更新**单份质押收益率**。
+
+为了避免“**交易费**较小且**质押池**内资金较大而导致**单份质押收益率**的更新存在严重精度损失”的问题，方法  {updateInterest_SimpleStake} 声明常量 MANTISSA 作为乘数因子计算**调整后的单份质押收益率**（即`stakeInterestAdjusted`）。
+
+```solidity
+function _updateInterest_SimpleStake(uint256 _value) internal {
+        if (stakePool_SimpleStake != 0) {
+            stakeInterestAdjusted += _value * MANTISSA / stakePool_SimpleStake;
+        }
+    }
+```
+
+
+
+#### b. 声明状态变量记录单利质押的关键数据：
 
 ```solidity
 // 接口 {INFTMarket_V5} 中声明的结构体：
@@ -185,8 +201,8 @@ function _handleNFTPurchaseWithSlippage(address _nftBuyer, address _ERC20TokenAd
   struct stakerOfSimpleStake {
   				// 用户质押的本金数量
           uint256 principal;
-          // “结算点”使用的“单份质押收益率”
-          uint256 accrualInterest;
+          // “结算点”使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
+          uint256 accrualInterestAdjusted;
           // 用户获得的总收益（总利息）
           uint256 earned;
       }
@@ -194,18 +210,21 @@ function _handleNFTPurchaseWithSlippage(address _nftBuyer, address _ERC20TokenAd
 // --------------------------------------------------------------------------------
 
 // {NFTMarket_V5}（继承了 {INFTMarket_V5} ）合约层，声明状态变量：
-	
+		
+		// 避免较小的数字在被较大的数字除时造成计算结果的严重的精度丢失而使用的乘数因子
+		// 当 NFT 售卖所产生的交易费较低且质押池中的数额巨大时，此常量可以起到缓解“单份质押收益率”更新存在精度丢失的问题
+		uint256 public constant MANTISSA = 1e18;
 		// 用户的单利质押信息结构体
 		mapping(address account => stakerOfSimpleStake stakerStruct) public staker; 
-    // 单份质押的收益率
-    uint256 public stakeInterest;
+    // 调整后的单份质押的收益率，即单份质押的收益率 * MANTISSA
+    uint256 public stakeInterestAdjusted;
     // 单利质押池中的 WETH 总数量
     uint256 public stakePool_SimpleStake;
 ```
 
 
 
-#### b. 方法 {stakeWETH_SimpleStake}：质押 WETH
+#### c. 方法 {stakeWETH_SimpleStake}：质押 WETH
 
 ```solidity
 function stakeWETH_SimpleStake(uint256 _stakedAmount) public {
@@ -214,21 +233,22 @@ function stakeWETH_SimpleStake(uint256 _stakedAmount) public {
         }
         // 更新用户获得的总收益（总利息）
         // 当用户第一次质押 WETH 时，由于之前存入的本金为 0 ，故此时更新后的收益也为 0 。
-        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterest - staker[msg.sender].accrualInterest);
+        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
         // 将用户的 WETH 转入本合约中（需要提前授权本合约足够的 allowance）
         IWETH9(wrappedETHAddr).transferFrom(msg.sender, address(this), _stakedAmount);
-        // 更新用户的质押信息（本金 和 此次结算时所使用的“单份质押收益率”）
+        // 更新用户的质押本金
         staker[msg.sender].principal += _stakedAmount;
-        staker[msg.sender].accrualInterest = stakeInterest;
+        // 更新用户此次结算时所使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
+        staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
         // 更新质押池的金额（单利质押池与复利质押池之间相互隔离）
         stakePool_SimpleStake += _stakedAmount;
-        emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterest);
+        emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterestAdjusted);
     }
 ```
 
 
 
-#### c. 方法 {unstakeWETH_SimpleStake}：解除质押 WETH
+#### d. 方法 {unstakeWETH_SimpleStake}：解除质押 WETH
 
 可通过本方法（全部/部分）提取质押的本金和对应的收益到本合约的 WETH 账户，用户可以再通过 {withdrawFromWETHBalance} 提取 ETH 到自己的账户中。
 
@@ -238,7 +258,7 @@ function unstakeWETH_SimpleStake(uint256 _unstakeAmount) public {
             revert invalidUnstakedAmount();
         }
         // 更新用户获得的总收益（总利息）
-        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterest - staker[msg.sender].accrualInterest);
+        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
         // 计算用户提取的本金数量所对应的收益（利息）
         uint256 correspondingInterest = _unstakeAmount * staker[msg.sender].earned / staker[msg.sender].principal;
         // 根据所提取的本金和收益数量，为用户增加相应的 WETH 余额
@@ -248,11 +268,11 @@ function unstakeWETH_SimpleStake(uint256 _unstakeAmount) public {
         staker[msg.sender].earned -= correspondingInterest;
         // 根据所提取的本金数量，减少相应数量的用户本金
         staker[msg.sender].principal -= _unstakeAmount;
-        // 更新用户此次结算时所使用的“单份质押收益率”
-        staker[msg.sender].accrualInterest = stakeInterest;
+        // 更新用户此次结算时所使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
+        staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
         // 更新质押池内的 WETH 数量
         stakePool_SimpleStake -= _unstakeAmount;
-        emit WETHUnstaked_SimpleStake(msg.sender, _unstakeAmount, stakeInterest);
+        emit WETHUnstaked_SimpleStake(msg.sender, _unstakeAmount, stakeInterestAdjusted);
     }
 ```
 
