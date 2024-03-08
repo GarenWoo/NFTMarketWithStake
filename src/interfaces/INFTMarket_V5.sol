@@ -30,6 +30,11 @@ interface INFTMarket_V5 {
     // ------------------------------------------------------ ** Events ** ------------------------------------------------------
 
     /**
+     * @dev Emitted when a user sends ETH to this contract.
+     */
+    event ETHReceived(address user, uint256 value);
+
+    /**
      * @dev Emitted when an NFT is listed successfully.
      */
     event NFTListed(address indexed user, address indexed NFTAddr, uint256 indexed tokenId, uint256 price);

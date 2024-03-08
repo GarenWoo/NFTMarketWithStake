@@ -224,7 +224,32 @@ function _updateInterest_SimpleStake(uint256 _value) internal {
 
 
 
-#### c. 方法 {stakeWETH_SimpleStake}：质押 WETH
+#### c. 方法 {stakeETH_SimpleStake}：质押 ETH
+
+```solidity
+function stakeETH_SimpleStake() public payable {
+        uint256 _stakedAmount = msg.value;
+        if (_stakedAmount == 0) {
+            revert stakeZero();
+        }
+       	// 更新用户获得的总收益（总利息）
+        // 当用户第一次质押 WETH 时，由于之前存入的本金为 0 ，故此时更新后的收益也为 0 。
+        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
+        // 将用户转入的 ETH 存入 WETH 合约，转为本合约的 WETH
+        IWETH9(wrappedETHAddr).deposit{value: _stakedAmount}();
+         // 更新用户的质押本金
+        staker[msg.sender].principal += _stakedAmount;
+        // 更新用户此次结算时所使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
+        staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
+        // 更新质押池的金额（单利质押池与复利质押池之间相互隔离）
+        stakePool_SimpleStake += _stakedAmount;
+        emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterestAdjusted);
+    }
+```
+
+
+
+#### d. 方法 {stakeWETH_SimpleStake}：质押 WETH
 
 ```solidity
 function stakeWETH_SimpleStake(uint256 _stakedAmount) public {
@@ -248,7 +273,7 @@ function stakeWETH_SimpleStake(uint256 _stakedAmount) public {
 
 
 
-#### d. 方法 {unstakeWETH_SimpleStake}：解除质押 WETH
+#### e. 方法 {unstakeWETH_SimpleStake}：解除质押 WETH
 
 可通过本方法（全部/部分）提取质押的本金和对应的收益到本合约的 WETH 账户，用户可以再通过 {withdrawFromWETHBalance} 提取 ETH 到自己的账户中。
 
@@ -332,7 +357,33 @@ function withdrawFromWETHBalance(uint256 _value) external {
 
 
 
-#### b. 方法 {stakeWETH_CompoundStake}：质押 WETH
+#### b. 方法 {stakeETH_CompoundStake}：质押 ETH
+
+```solidity
+function stakeETH_CompoundStake() public payable {
+        uint256 _stakedAmount = msg.value;
+        if (_stakedAmount == 0) {
+            revert stakeZero();
+        }
+        uint256 shares;
+        uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
+        if (totalSupply == 0) {
+            shares = _stakedAmount;
+        } else {
+        		// 计算应当铸造的股份（KKToken）数量
+            shares = (_stakedAmount * totalSupply) / stakePool_CompoundStake;
+        }
+        // 将用户转入的 ETH 转化为本合约的 WETH
+        IWETH9(wrappedETHAddr).deposit{value: _stakedAmount}();
+        KKToken(KKToken_CompoundStake).mint(msg.sender, shares);
+        stakePool_CompoundStake += _stakedAmount;
+        emit WETHStaked_CompoundStake(msg.sender, _stakedAmount, shares);
+    }
+```
+
+
+
+#### c. 方法 {stakeWETH_CompoundStake}：质押 WETH
 
 ```solidity
 function stakeWETH_CompoundStake(uint256 _stakedAmount) public {
@@ -347,6 +398,7 @@ function stakeWETH_CompoundStake(uint256 _stakedAmount) public {
         		// 计算应当铸造的股份（KKToken）数量
             shares = (_stakedAmount * totalSupply) / stakePool_CompoundStake;
         }
+        // 将用户转入的 WETH 转入本合约
         IWETH9(wrappedETHAddr).transferFrom(msg.sender, address(this), _stakedAmount);
         KKToken(KKToken_CompoundStake).mint(msg.sender, shares);
         stakePool_CompoundStake += _stakedAmount;
@@ -356,7 +408,7 @@ function stakeWETH_CompoundStake(uint256 _stakedAmount) public {
 
 
 
-#### c. 方法 {unstakeWETH_CompoundStake}： 解除质押 WETH
+#### d. 方法 {unstakeWETH_CompoundStake}： 解除质押 WETH
 
 ```solidity
 function unstakeWETH_CompoundStake(uint256 _sharesAmount) public {

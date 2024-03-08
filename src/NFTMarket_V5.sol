@@ -3,7 +3,7 @@ pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC721} from"@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -13,14 +13,14 @@ import "./interfaces/INFTMarket_V5.sol";
 import "./interfaces/INFTPermit.sol";
 import "./interfaces/IUniswapV2Router02.sol";
 import "./interfaces/IWETH9.sol";
-import "./KKToken.sol";
+import {KKToken} from "./KKToken.sol";
 
 /**
  * @title This is an NFT exchange contract that can provide trading for ERC721 Tokens. Various ERC721 tokens are able to be traded here.
  * This contract was updated from `NFTMarket_V4`.
  * Now, part of profits of selling NFTs will be staked in this contract.
  *
- * ( NFTMarket 合约支持功能：上架 NFT、下架 NFT、购买 NFT、白名单用户领取 NFT、ERC-20 token 预授权、multicall、WETH 质押/解除质押、将 NFT 卖出所获的部分利润投入质押、其他实用功能 )
+ * ( NFTMarket 合约支持功能：上架 NFT、下架 NFT、购买 NFT、白名单用户领取 NFT、ERC-20 token 预授权、multicall、ETH(或WETH)质押/解除质押、将 NFT 卖出所获的部分利润投入质押、其他实用功能 )
  * ( V5 新增特性：新增质押功能，NFT 部分的卖家收益将自动投入到质押的收益池中，质押功能实现了两类质押方式且同时存在：)
  * ( 1. 单利质押，详见方法 {stakeWETH_SimpleStake} )
  * ( 2. 复利质押, 详见方法 {stakeWETH_CompoundStake} )
@@ -28,6 +28,7 @@ import "./KKToken.sol";
  * @author Garen Woo
  */
 contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
+    using SafeERC20 for IERC20;
     address private owner;                              // the address of the owner of this NFTMarket contract
     address public immutable GTSTAddr;                  // the address of the default ERC-20 token used in trading NFT(s) in this NFTMarket
     address public immutable wrappedETHAddr;            // the address of WETH used in staking and trading NFT(s)
@@ -50,8 +51,6 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
     // State variables of compound stake(compound interest)
     uint256 public stakePool_CompoundStake;             // the total amount of staked WETH using the algorithm of ERC4626
 
-    using SafeERC20 for IERC20;
-
     constructor(address _tokenAddr, address _wrappedETHAddr, address _routerAddr, address _KKToken_CompoundStake) {
         owner = msg.sender;
         GTSTAddr= _tokenAddr;
@@ -68,6 +67,10 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
             revert notOwnerOfNFTMarket();
         }
         _;
+    }
+
+    receive() external payable {
+        emit ETHReceived(msg.sender, msg.value);
     }
 
 
@@ -422,7 +425,34 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
     }
 
 
-    // ------------------------------------------------------ ** Stake WETH(Simple Interest) ** ------------------------------------------------------
+    // ------------------------------------------------------ ** Stake And Unstake(Simple Interest) ** ------------------------------------------------------
+
+    /**
+     * @notice Stake ETH with simple interest(also call the stake with simple interest 'Simple Stake').
+     *
+     * @dev The total staked(simple stake) amount of ETH will be recorded(in the form of WETH) by the state variable `stakePool_SimpleStake`.
+     * This function can stake ETH in this NFTMarket contract to earn simple interest.
+     * The simple interest comes from part of the profits of selling NFT(s) which is automatically added to `stakePool_SimpleStake`(non-zero value of `stakePool_SimpleStake` required).
+     * In this type of stake, `stakeInterestAdjusted` which represents the interest(multiplied by `MANTISSA`) of each staked ETH is maintained globally when `stakePool_SimpleStake` changes(non-zero value of `stakePool_SimpleStake` required).
+     * Emits the event {WETHStaked_SimpleStake}.
+     */
+    function stakeETH_SimpleStake() public payable {
+        uint256 _stakedAmount = msg.value;
+        if (_stakedAmount == 0) {
+            revert stakeZero();
+        }
+        // Update the earned interest before updating the principal.
+        // When a user stakes ETH for the first time, the principal before this stake will be zero. The earned interest of this staker is zero as well.
+        staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
+        // Convert the transferred ETH to WETH.
+        IWETH9(wrappedETHAddr).deposit{value: _stakedAmount}();
+        // Update the fields of `staker`:
+        staker[msg.sender].principal += _stakedAmount;
+        staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
+        // Add the new staked amount of WETH into `stakePool_SimpleStake`(i.e. the total amount of the staked WETH)
+        stakePool_SimpleStake += _stakedAmount;
+        emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterestAdjusted);
+    }
 
     /**
      * @notice Stake WETH with simple interest(also call the stake with simple interest 'Simple Stake').
@@ -481,7 +511,35 @@ contract NFTMarket_V5 is INFTMarket_V5, IERC721Receiver {
     }
     
 
-    // -------------------------------------------------- ** Stake WETH(Compound Interest, Using ERC4626) ** --------------------------------------------------
+    // -------------------------------------------------- ** Stake And Unstake(Compound Interest) ** --------------------------------------------------
+
+    /**
+     * @notice Stake ETH with compound interest and get minted shares(i.e. KKToken_CompoundStake)(also call the stake with compound interest 'Compound Stake').
+     *
+     * @dev Implement the algorithm of ERC4626(a financial model of compound interest that reinvests the interest as principal to earn future interest) to calculate the amount of minted shares(i.e. KKToken_CompoundStake).
+     * A simple example which has realized ERC4626 is presented at "https://solidity-by-example.org/defi/vault/".
+     * This function can stake ETH in this NFTMarket contract to earn compound interest.
+     * The compound interest comes from part of the profits of selling NFT(s) which is staked(compound stake) in this NFTMarket contract automatically without calling this function.
+     * After the stake, `msg.sender` will obtain an amount of shares. Those shares can be burnt to withdraw the staked principal and its interest back.
+     * Emits the event {WETHStaked_CompoundStake}.
+     */
+    function stakeETH_CompoundStake() public payable {
+        uint256 _stakedAmount = msg.value;
+        if (_stakedAmount == 0) {
+            revert stakeZero();
+        }
+        uint256 shares;
+        uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
+        if (totalSupply == 0) {
+            shares = _stakedAmount;
+        } else {
+            shares = (_stakedAmount * totalSupply) / stakePool_CompoundStake;
+        }
+        IWETH9(wrappedETHAddr).deposit{value: _stakedAmount}();
+        KKToken(KKToken_CompoundStake).mint(msg.sender, shares);
+        stakePool_CompoundStake += _stakedAmount;
+        emit WETHStaked_CompoundStake(msg.sender, _stakedAmount, shares);
+    }
 
     /**
      * @notice Stake WETH with compound interest and get minted shares(i.e. KKToken_CompoundStake)(also call the stake with compound interest 'Compound Stake').
