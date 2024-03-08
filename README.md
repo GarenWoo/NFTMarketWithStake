@@ -19,6 +19,7 @@
 		
 		// 交易费率的有效数字（常量）
 		uint8 public constant FIGURE_FEERATIO = 10;
+		
 		// 交易费率的小数点之后的位数（常量），决定费率的精度
     uint8 public constant FRACTION_FEERATIO = 2;
 ```
@@ -42,10 +43,12 @@ function _handleNFTPurchase(address _nftBuyer, address _ERC20TokenAddr, address 
         		// 转入`_tokenAmount`数量的 ERC-20 token
             bool _success = IERC20(_ERC20TokenAddr).transferFrom(_nftBuyer, address(this), _tokenAmount);
             require(_success, "ERC-20 token transferFrom failed");
+						
 						// 将给定的 ERC-20 token 兑换为 WETH
             uint256 tokenBalanceBeforeSwap = IERC20(_ERC20TokenAddr).balanceOf(address(this));
             uint256 tokenAmountPaid = _swapTokenForExactWETH(_ERC20TokenAddr, NFTPrice, _tokenAmount);
             uint256 tokenBalanceAfterSwap = IERC20(_ERC20TokenAddr).balanceOf(address(this));
+            
             // 验证 swap 实际所需要的 token 数量（考虑滑点）与 token 的实际的减少量相等，否则回滚交易
             if (tokenBalanceAfterSwap >= tokenBalanceBeforeSwap || tokenBalanceBeforeSwap - tokenBalanceAfterSwap != tokenAmountPaid) {
                 address[] memory _path = new address[](2);
@@ -57,6 +60,7 @@ function _handleNFTPurchase(address _nftBuyer, address _ERC20TokenAddr, address 
             uint256 refundTokenAmount = _tokenAmount - tokenAmountPaid;
             bool _refundTokenSuccess = IERC20(_ERC20TokenAddr).transfer(_nftBuyer, refundTokenAmount);
             require(_refundTokenSuccess, "Fail to refund exceed amount of token");
+            
             // 确认最终的成交价为`tokenAmountPaid`个给定的 ERC-20 token
             result = tokenAmountPaid;
         } else {
@@ -64,24 +68,26 @@ function _handleNFTPurchase(address _nftBuyer, address _ERC20TokenAddr, address 
         		// 转入与 NFT 价格等额的 WETH
             bool _ok = IWETH9(wrappedETHAddr).transferFrom(_nftBuyer, address(this), NFTPrice);
             require(_ok, "WETH transferFrom failed");
+            
             // 确认最终的成交价为`NFTPrice`个 WETH
             result = NFTPrice;
         }
         // 将 NFT 从本合约转给买家（注：上架后的 NFT 的 owner 是本合约）
         IERC721(_nftAddr).transferFrom(address(this), _nftBuyer, _tokenId);
+        
         // 获取 NFT 卖家（前持有者）
         address NFTOwner = IERC721(_nftAddr).getApproved(_tokenId);
         
         // 质押方法 1：单利质押
         // 声明变量`stakedAmount_Simple`表示参与单利质押的 WETH 数额
         uint256 stakedAmount_Simple;
+        
         // 当单利质押池中的 WETH 数量为 0 时，则不会自动将该部分的 NFT 收益转入质押池内（即`stakedAmount_Simple`为默认值 0 ，避免这部分 WETH 锁死在合约中无法取出）
         if (stakePool_SimpleStake != 0) {
             stakedAmount_Simple = NFTPrice * FIGURE_FEERATIO / (10 ** FRACTION_FEERATIO);
             // 更新“单份质押的收益率”
             _updateInterest_SimpleStake(stakedAmount_Simple);
         }
-
         // 质押方法 2：复利质押
         uint256 stakedAmount_Compound = NFTPrice * FIGURE_FEERATIO / (10 ** FRACTION_FEERATIO);
         _stakeWETH_CompoundStake(NFTOwner, stakedAmount_Compound);
@@ -110,13 +116,16 @@ function _handleNFTPurchaseWithSlippage(address _nftBuyer, address _ERC20TokenAd
         // 当 ERC-20 token 不为 WETH 时：
         		// 调用 {_estimateAmountInWithSlipage} 计算应当转入的 token 数量
             uint256 amountInRequired = _estimateAmountInWithSlipage(_ERC20TokenAddr, NFTPrice, _slippageFigure, _slippageFraction);
+            
             // 转入`_tokenAmount`数量的 ERC-20 token
             bool _success = IERC20(_ERC20TokenAddr).transferFrom(_nftBuyer, address(this), amountInRequired);
             require(_success, "ERC-20 token transferFrom failed");
+            
             // 将给定的 ERC-20 token 兑换为 WETH
             uint256 tokenBalanceBeforeSwap = IERC20(_ERC20TokenAddr).balanceOf(address(this));
             uint256 tokenAmountPaid = _swapTokenForExactWETH(_ERC20TokenAddr, NFTPrice, amountInRequired);
             uint256 tokenBalanceAfterSwap = IERC20(_ERC20TokenAddr).balanceOf(address(this));
+            
             // 验证 swap 实际所需要的 token 数量（考虑滑点）与 token 的实际的减少量相等，否则回滚交易
             if (tokenBalanceAfterSwap >= tokenBalanceBeforeSwap || tokenBalanceBeforeSwap - tokenBalanceAfterSwap != tokenAmountPaid) {
                 address[] memory _path = new address[](2);
@@ -131,23 +140,25 @@ function _handleNFTPurchaseWithSlippage(address _nftBuyer, address _ERC20TokenAd
         		// 转入与 NFT 价格等额的 WETH
             bool _ok = IWETH9(wrappedETHAddr).transferFrom(_nftBuyer, address(this), NFTPrice);
             require(_ok, "WETH transferFrom failed");
+            
             // 确认最终的成交价为`NFTPrice`个 WETH
             result = NFTPrice;
         }
         // 将 NFT 从本合约转给买家（注：上架后的 NFT 的 owner 是本合约）
         IERC721(_nftAddr).transferFrom(address(this), _nftBuyer, _tokenId);
+        
         // 获取 NFT 卖家（前持有者）
         address NFTOwner = IERC721(_nftAddr).getApproved(_tokenId);
         
         // 质押方法 1：单利质押
         // 声明变量`stakedAmount_Simple`表示参与单利质押的 WETH 数额
         uint256 stakedAmount_Simple;
+        
         // 当单利质押池中的 WETH 数量为 0 时，则不会自动将该部分的 NFT 收益转入质押池内（即`stakedAmount_Simple`为默认值 0 ，避免这部分 WETH 锁死在合约中无法取出）
         if (stakePool_SimpleStake != 0) {
             stakedAmount_Simple = NFTPrice * FIGURE_FEERATIO / (10 ** FRACTION_FEERATIO);
             _updateInterest_SimpleStake(stakedAmount_Simple);
         }
-
         // 质押方法 2：复利质押
         uint256 stakedAmount_Compound = NFTPrice * FIGURE_FEERATIO / (10 ** FRACTION_FEERATIO);
         _stakeWETH_CompoundStake(NFTOwner, stakedAmount_Compound);
@@ -201,8 +212,10 @@ function _updateInterest_SimpleStake(uint256 _value) internal {
   struct stakerOfSimpleStake {
   				// 用户质押的本金数量
           uint256 principal;
+          
           // “结算点”使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
           uint256 accrualInterestAdjusted;
+          
           // 用户获得的总收益（总利息）
           uint256 earned;
       }
@@ -214,10 +227,13 @@ function _updateInterest_SimpleStake(uint256 _value) internal {
 		// 避免较小的数字在被较大的数字除时造成计算结果的严重的精度丢失而使用的乘数因子
 		// 当 NFT 售卖所产生的交易费较低且质押池中的数额巨大时，此常量可以起到缓解“单份质押收益率”更新存在精度丢失的问题
 		uint256 public constant MANTISSA = 1e18;
+		
 		// 用户的单利质押信息结构体
 		mapping(address account => stakerOfSimpleStake stakerStruct) public staker; 
+    
     // 调整后的单份质押的收益率，即单份质押的收益率 * MANTISSA
     uint256 public stakeInterestAdjusted;
+    
     // 单利质押池中的 WETH 总数量
     uint256 public stakePool_SimpleStake;
 ```
@@ -235,12 +251,16 @@ function stakeETH_SimpleStake() public payable {
        	// 更新用户获得的总收益（总利息）
         // 当用户第一次质押 WETH 时，由于之前存入的本金为 0 ，故此时更新后的收益也为 0 。
         staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
+        
         // 将用户转入的 ETH 存入 WETH 合约，转为本合约的 WETH
         IWETH9(wrappedETHAddr).deposit{value: _stakedAmount}();
-         // 更新用户的质押本金
+        
+        // 更新用户的质押本金
         staker[msg.sender].principal += _stakedAmount;
+        
         // 更新用户此次结算时所使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
         staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
+        
         // 更新质押池的金额（单利质押池与复利质押池之间相互隔离）
         stakePool_SimpleStake += _stakedAmount;
         emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterestAdjusted);
@@ -259,12 +279,16 @@ function stakeWETH_SimpleStake(uint256 _stakedAmount) public {
         // 更新用户获得的总收益（总利息）
         // 当用户第一次质押 WETH 时，由于之前存入的本金为 0 ，故此时更新后的收益也为 0 。
         staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
+        
         // 将用户的 WETH 转入本合约中（需要提前授权本合约足够的 allowance）
         IWETH9(wrappedETHAddr).transferFrom(msg.sender, address(this), _stakedAmount);
+        
         // 更新用户的质押本金
         staker[msg.sender].principal += _stakedAmount;
+        
         // 更新用户此次结算时所使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
         staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
+        
         // 更新质押池的金额（单利质押池与复利质押池之间相互隔离）
         stakePool_SimpleStake += _stakedAmount;
         emit WETHStaked_SimpleStake(msg.sender, _stakedAmount, stakeInterestAdjusted);
@@ -284,17 +308,23 @@ function unstakeWETH_SimpleStake(uint256 _unstakeAmount) public {
         }
         // 更新用户获得的总收益（总利息）
         staker[msg.sender].earned += staker[msg.sender].principal * (stakeInterestAdjusted - staker[msg.sender].accrualInterestAdjusted) / MANTISSA;
+        
         // 计算用户提取的本金数量所对应的收益（利息）
         uint256 correspondingInterest = _unstakeAmount * staker[msg.sender].earned / staker[msg.sender].principal;
+        
         // 根据所提取的本金和收益数量，为用户增加相应的 WETH 余额
         userBalanceOfWETH[msg.sender] += _unstakeAmount + correspondingInterest;
+        
         // 更新结构体`staker`中的各个字段
         // 根据所计算出的收益（利息）从用户总收益（总利息）中减少相应的 WETH 数量
         staker[msg.sender].earned -= correspondingInterest;
+        
         // 根据所提取的本金数量，减少相应数量的用户本金
         staker[msg.sender].principal -= _unstakeAmount;
+        
         // 更新用户此次结算时所使用的“调整后的单份质押收益率”（即“单份质押收益率” * MANTISSA ）
         staker[msg.sender].accrualInterestAdjusted = stakeInterestAdjusted;
+        
         // 更新质押池内的 WETH 数量
         stakePool_SimpleStake -= _unstakeAmount;
         emit WETHUnstaked_SimpleStake(msg.sender, _unstakeAmount, stakeInterestAdjusted);
@@ -308,8 +338,10 @@ function withdrawFromWETHBalance(uint256 _value) external {
             revert withdrawalExceedBalance(_value, userBalanceOfWETH[msg.sender]);
         }
         userBalanceOfWETH[msg.sender] -= _value;
+        
         // 调用 WETH 的 {withdraw} 方法将 ETH 转入本合约
         IWETH9(wrappedETHAddr).withdraw(_value);
+        
         // 本合约再将等额的 ETH 转入此方法调用者的地址
         (bool _success, ) = payable(msg.sender).call{value: _value}("");
         require(_success, "withdraw ETH failed");
@@ -418,9 +450,11 @@ function unstakeWETH_CompoundStake(uint256 _sharesAmount) public {
         uint256 totalSupply = KKToken(KKToken_CompoundStake).totalSupply();
         // 计算应当提取的 WETH 的数量
         uint amount = (_sharesAmount * stakePool_CompoundStake) / totalSupply;
+        
         // 将股份（KKToken）销毁
         KKToken(KKToken_CompoundStake).burn(msg.sender, _sharesAmount);
         stakePool_CompoundStake -= amount;
+        
         // 增加用户的 WETH 余额
         userBalanceOfWETH[msg.sender] += amount;
         emit WETHUnstaked_CompoundStake(msg.sender, _sharesAmount, amount);
