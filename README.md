@@ -102,7 +102,7 @@ function _handleNFTPurchase(address _nftBuyer, address _ERC20TokenAddr, address 
 
 -----
 
-### 1-2. 方法 {_handleNFTPurchaseWithSlippage}：加入了“将售卖 NFT 的部分收益自动转入质押”的机制
+### 1-2. 方法 {_handleNFTPurchaseWithSlippage}：加入了“将售卖 NFT 的部分收益自动转入质押（考虑滑点）”的机制
 
 ```solidity
 // 此内部方法由方法 {buyNFTWithAnyToken} 调用，将调用者给出的任意 ERC-20 token 投入 swap 并购买 NFT
